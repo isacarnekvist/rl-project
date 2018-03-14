@@ -1,9 +1,9 @@
 [submodule "baselines"]
 	path = baselines
-	url = ./baselines/
+	url = https://github.com/openai/baselines.git
 [submodule "open-ai-yumi"]
 	path = open-ai-yumi
-	url = ./open-ai-yumi/
+	url = git@github.com:isacarnekvist/open-ai-yumi.git
 [submodule "pytorch-a2c-ppo-acktr"]
 	path = pytorch-a2c-ppo-acktr
-	url = ./pytorch-a2c-ppo-acktr/
+	url = git@github.com:isacarnekvist/pytorch-a2c-ppo-acktr.git

@@ -1,0 +1,9 @@
+[submodule "baselines"]
+	path = baselines
+	url = ./baselines/
+[submodule "open-ai-yumi"]
+	path = open-ai-yumi
+	url = ./open-ai-yumi/
+[submodule "pytorch-a2c-ppo-acktr"]
+	path = pytorch-a2c-ppo-acktr
+	url = ./pytorch-a2c-ppo-acktr/

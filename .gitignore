@@ -1,0 +1,5 @@
+.idea
+venv
+MUJOCO_LOG.TXT
+pytorch-a2c-ppo-acktr/runs
+pytorch-a2c-ppo-acktr/trained_models

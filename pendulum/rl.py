@@ -87,4 +87,3 @@ class QFunction(object):
                 q_max = q
                 a_max = action
         return a_max, q_max
-

@@ -26,8 +26,8 @@ if __name__ == '__main__':
     #    'action_coeff': 1.0,
     #}
     env.env.init_params(**params)
-    resolutions = [79, 93, 101]
-    q_resolution = 33
+    resolutions = [71, 93]
+    q_resolution = 101
     V = TiledValueFunction(env.observation_space.shape[0],
                       env.observation_space.low,
                       env.observation_space.high,
@@ -67,7 +67,7 @@ if __name__ == '__main__':
             state_inv = [-state[0], -state[1]]
             V[state_inv] = V[state]
             state, _, _, _ = env.step(a_max)
-        if i % 32 == 0:
+        if i % 15 == 0:
             print('Time remaining:', deadline - datetime.datetime.now())
             #state = env.reset()
             #plt.figure(figsize=(4, 4))

@@ -1,4 +1,9 @@
+import pickle
+
 import numpy as np
+
+import gym
+from stitching.policy import PolicyABC
 
 
 class ValueFunction(object):
@@ -32,6 +37,10 @@ class ValueFunction(object):
     def sample_state(self):
         return np.random.uniform(self.lower_limits, self.upper_limits)
 
+    @classmethod
+    def load_from_dict(cls):
+        pass
+
 
 class TiledValueFunction(object):
 
@@ -55,6 +64,19 @@ class TiledValueFunction(object):
 
     def sample_state(self):
         return np.random.uniform(self.lower_limits, self.upper_limits)
+
+    @classmethod
+    def load_from_dict(cls, dict_):
+        env = gym.make('Pendulum-v0')
+        env.env.init_params(**dict_['params'])
+        resolutions = [d['resolution'] for d in dict_['value_functions']]
+        tiled_v = TiledValueFunction(env.observation_space.shape[0],
+                                     env.observation_space.low,
+                                     env.observation_space.high,
+                                     resolutions)
+        for v, v_dict in zip(tiled_v._vs, dict_['value_functions']):
+            v._v = v_dict['values']
+        return tiled_v
 
 
 class QFunction(object):
@@ -87,3 +109,38 @@ class QFunction(object):
                 q_max = q
                 a_max = action
         return a_max, q_max
+
+
+class PendulumPolicy(PolicyABC):
+
+    def __init__(self, value_function, env):
+        q_resolution = 101
+        self._Q = QFunction(value_function,
+                            env.env.forward,
+                            env.env.reward,
+                            env.action_space.low,
+                            env.action_space.high,
+                            resolution=q_resolution)
+
+    def act(self, state):
+        return self._Q.max_action(state)[0]
+
+
+def load_from_path(policy_path):
+    """Returns a parameterized environment"""
+    with open(policy_path, 'rb') as f:
+        dict_ = pickle.load(f)
+    env = gym.make('Pendulum-v0')
+    env.env.init_params(**dict_['params'])
+    tiled_v = TiledValueFunction.load_from_dict(dict_)
+    return PendulumPolicy(tiled_v, env), env
+
+
+if __name__ == '__main__':
+    path = 'trained_agents/pendulum_03/policy.pkl'
+    policy, env = load_from_path(path)
+    state = env.reset()
+    for _ in range(128):
+        action = policy.act(state)
+        state = env.step(action)[0]
+        env.render()

@@ -20,6 +20,13 @@ class ValueFunction(object):
         rounded = np.round(unrounded, 0)
         return rounded.astype(np.int)
 
+    # TODO This is a public copy of the above
+    def state_to_index(self, item):
+        item = np.clip(item, self.lower_limits, self.upper_limits)
+        unrounded = (item - self.lower_limits) / (self.upper_limits - self.lower_limits) * (self.resolution - 1)
+        rounded = np.round(unrounded, 0)
+        return rounded.astype(np.int)
+
     def __getitem__(self, item):
         indices = self._item_round(item)
         return self._v[indices[0], indices[1]]  # Don't know how to do this general yet
@@ -40,6 +47,10 @@ class ValueFunction(object):
     @classmethod
     def load_from_dict(cls):
         pass
+
+    @property
+    def shape(self):
+        return self._v.shape
 
 
 class TiledValueFunction(object):
@@ -137,10 +148,11 @@ def load_from_path(policy_path):
 
 
 if __name__ == '__main__':
-    path = 'trained_agents/pendulum_03/policy.pkl'
-    policy, env = load_from_path(path)
-    state = env.reset()
-    for _ in range(128):
-        action = policy.act(state)
-        state = env.step(action)[0]
-        env.render()
+    env = gym.make('Pendulum-v0')
+    v = ValueFunction(2,
+                      env.observation_space.low,
+                      env.observation_space.high,
+                      33)
+    n = 5
+    inds = v._item_round([0.0, (1 - n) * 8.0 / n])
+    print(inds)

@@ -43,7 +43,7 @@ if __name__ == '__main__':
     agent_dir = os.path.join(args.store_dir, agent_id)
     if not os.path.exists(agent_dir):
         os.mkdir(agent_dir)
-    agent_path = os.path.join(agent_dir, 'agent.pkl')
+    agent_path = os.path.join(agent_dir, 'policy.pkl')
 
     deadline = datetime.datetime.now() + datetime.timedelta(hours=4)
     with open(os.path.join(agent_dir, 'info.txt'), 'w') as f:
@@ -57,36 +57,30 @@ if __name__ == '__main__':
         for j in range(256):
             state = V.sample_state()
             a_max, q_max = Q.max_action(state)
-            V[state] += 0.1 * (q_max - V[state])
+            V[state] += 0.5 * (q_max - V[state])
             state_inv = [-state[0], -state[1]]
             V[state_inv] = V[state]
         state = env.reset()
         for _ in range(256):
             a_max, q_max = Q.max_action(state)
-            V[state] += 0.1 * (q_max - V[state])
+            V[state] += 0.5 * (q_max - V[state])
             state_inv = [-state[0], -state[1]]
             V[state_inv] = V[state]
             state, _, _, _ = env.step(a_max)
         if i % 15 == 0:
             print('Time remaining:', deadline - datetime.datetime.now())
-            #state = env.reset()
-            #plt.figure(figsize=(4, 4))
-            #plt.imshow(V._vs[-1]._v, extent=[V.lower_limits[0], V.upper_limits[0], V.lower_limits[1], V.upper_limits[1]], aspect='auto', origin='lower')
-            #plt.ylabel('$\\dot{\\theta}$')
-            #plt.xlabel('$\\theta$')
-            #plt.colorbar()
-            #plt.savefig(os.path.join(agent_dir, 'value_function.pdf'))
-            #plt.close()
-            #actions = np.zeros((resolutions[-1], resolutions[-1]))
-            #for col, th in enumerate(np.linspace(V.lower_limits[0], V.upper_limits[0], resolutions[-1])):
-            #    for row, th_dot in enumerate(np.linspace(V.lower_limits[0], V.upper_limits[0], resolutions[-1])):
-            #        a_max, q_max = Q.max_action([th, th_dot])
-            #        actions[row, col] = a_max[0]
-            #plt.imshow(actions, extent=[V.lower_limits[0], V.upper_limits[0], V.lower_limits[1], V.upper_limits[1]], aspect='auto', origin='lower')
-            #plt.ylabel('$\\dot{\\theta}$')
-            #plt.xlabel('$\\theta$')
-            #plt.colorbar()
-            #plt.savefig(os.path.join(agent_dir, 'policy.pdf'))
-            #plt.close()
+
+            # SAVE
+            output = {
+                'params': params,
+                'value_functions': []
+            }
+            for v in V._vs:
+                output['value_functions'].append({
+                    'resolution': v.resolution,
+                    'lower_limits': v.lower_limits,
+                    'upper_limits': v.upper_limits,
+                    'values': v._v
+                })
             with open(agent_path, 'wb') as f:
-                pickle.dump((V, params), f)
+                pickle.dump(output, f)

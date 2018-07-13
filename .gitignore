@@ -8,3 +8,6 @@ __pycache__
 *trained_agents*
 *.pkl
 *.pt
+*.pdf
+*.gif
+*.mp4

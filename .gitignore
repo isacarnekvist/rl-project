@@ -5,3 +5,6 @@ pytorch-a2c-ppo-acktr/runs
 pytorch-a2c-ppo-acktr/trained_models
 .ipynb_checkpoints
 __pycache__
+*trained_agents*
+*.pkl
+*.pt

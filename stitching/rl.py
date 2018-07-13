@@ -309,13 +309,14 @@ class PopTart(torch.nn.Module):
         self.m2 = b * self.m2 + (1 - b) * (targets ** 2).mean(dim=0)
 
     def mse_loss(self, predictions, targets):
-        self.w.data = self.σ * self.w
-        self.b.data = self.σ * self.b + self.µ
+        if self.training:
+            self.w.data = self.σ * self.w
+            self.b.data = self.σ * self.b + self.µ
 
-        self._update(targets)
+            self._update(targets)
 
-        self.w.data = self.w / self.σ
-        self.b.data = (self.b - self.µ) / self.σ
+            self.w.data = self.w / self.σ
+            self.b.data = (self.b - self.µ) / self.σ
 
         targets_normed = (targets - self.µ) / self.σ
         predictions_normed = self.w * predictions + self.b

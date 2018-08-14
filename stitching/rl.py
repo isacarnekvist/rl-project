@@ -8,30 +8,24 @@ class WelfordNormalization(torch.nn.Module):
 
     def __init__(self, num_features):
         super(WelfordNormalization, self).__init__()
-        self.count = 0
+        self._count = 0
         self.register_buffer('mean', torch.zeros(num_features))
-        self.register_buffer('M2', torch.zeros(num_features))
+        self.register_buffer('variance', torch.zeros(num_features))
 
-    def update_single(self, x):
-        self.count += 1
-        delta1 = x - self.mean
-        self.mean += delta1 / self.count
-        delta2 = x - self.mean
-        self.M2 += delta1 * delta2
-
-    def update_batch(self, x):
-        if self.count > 1e6:
-            return
-        for n in range(x.size(0)):
-            self.update_single(x[n, :])
-
-
-    @property
-    def variance(self):
-        return self.M2 / (self.count - 1)
+    def _update(self, x):
+        self._count += 1
+        self.mean.data += (x.mean(dim=0) - self.mean) / self._count
+        self.variance.data += (((x - self.mean) ** 2).mean(dim=0) - self.variance) / self._count
 
     def forward(self, x):
+        if self.training:
+            self._update(x)
         return (x - self.mean) / (self.variance ** 0.5 + 1e-9)
+
+
+def normalize_action(env, action):
+    action_range = env.action_space.high - env.action_space.low
+    return 2 * (action - env.action_space.low) / action_range - 1
 
 
 class PolicyCollection(object):
@@ -67,6 +61,8 @@ class PolicyCollection(object):
 
     def step(self, epsilon=0.5):
         """
+        All actions return are normalized to range [-1, 1]
+
         Returns : (i, x, u, r, x_, u_)
             x  : initial state
             u  : epsilon greedy policy in initial state
@@ -81,7 +77,7 @@ class PolicyCollection(object):
         for i, (obs, policy, env) in enumerate(zip(self.observations,
                                                    self.policies,
                                                    self.envs)):
-            random_action = env.action_space.sample()
+            random_action = env.action_space.sample().astype(np.float32)
             optimal_action = np.array(policy.act(obs), dtype=np.float32)
 
             # Epsilon greedy
@@ -96,7 +92,15 @@ class PolicyCollection(object):
                 self.observations[i] = self.envs[i].reset()
             else:
                 self.observations[i] = obs_
-            yield np.array([i]), obs, action, optimal_action, np.array([r]), obs_, optimal_action_
+            yield (
+                np.array([i]),
+                obs.astype(np.float32),
+                normalize_action(env, action),
+                normalize_action(env, optimal_action),
+                np.array([r]),
+                obs_,
+                normalize_action(env, optimal_action_)
+            )
 
     def __len__(self):
         return len(self.envs)
@@ -104,20 +108,36 @@ class PolicyCollection(object):
 
 class StateActionFunction(torch.nn.Module):
 
-    def __init__(self, x_size, u_size, z_size):
+    def __init__(self, x_size, u_size, z_size, n_layers=10, use_layer_norm=False):
         super(StateActionFunction, self).__init__()
+        self.input_norm_x = WelfordNormalization(x_size)
+        self.input_norm_u = WelfordNormalization(u_size)
+        self.use_layer_norm = use_layer_norm
+        if self.use_layer_norm:
+            self.layer_norm_1 = torch.nn.LayerNorm(400)
         self.fc1 = torch.nn.Linear(x_size + z_size + u_size, 400)
-        self.n_layers = 10
+        self.n_layers = n_layers
         for layer_id in range(2, self.n_layers):
+            if self.use_layer_norm:
+                self.__setattr__(f'layer_norm{layer_id}', torch.nn.LayerNorm(400))
             self.__setattr__(f'fc{layer_id}', torch.nn.Linear(400, 400))
         self.fcy = torch.nn.Linear(400, 1)
 
-    def forward(self, x, u, z):
-        xuz = torch.cat([x, u, z], dim=1)
+    def forward(self, x, u, z=None):
+        x = self.input_norm_x(x)
+        u = self.input_norm_u(u)
+        if z is None:
+            xuz = torch.cat([x, u], dim=1)
+        else:
+            xuz = torch.cat([x, u, z], dim=1)
         y = F.relu(self.fc1(xuz))
         for layer_id in range(2, self.n_layers):
             fc = self.__getattr__(f'fc{layer_id}')
-            y = F.relu(fc(y)) + y
+            if self.use_layer_norm:
+                layer_norm = self.__getattr__(f'layer_norm{layer_id}')
+                y = F.relu(layer_norm(fc(y))) + y
+            else:
+                y = F.relu(fc(y)) + y
         return self.fcy(y)
 
 
@@ -139,23 +159,42 @@ class ValueFunction(torch.nn.Module):
 
 class Policy(torch.nn.Module):
 
-    def __init__(self, x_size, u_size, z_size, u_max=2.0):
+    def __init__(self, x_size, u_size, z_size, n_layers=10, use_layer_norm=False):
         super(Policy, self).__init__()
-        self.u_max = u_max
         self.fc1 = torch.nn.Linear(x_size + z_size, 400)
-        self.n_layers = 10
+        self.use_layer_norm = use_layer_norm
+        if self.use_layer_norm:
+            self.layer_norm_1 = torch.nn.LayerNorm(400)
+        self.n_layers = n_layers
+        self.input_norm_x = WelfordNormalization(x_size)
         for layer_id in range(2, self.n_layers):
+            if self.use_layer_norm:
+                self.__setattr__(f'layer_norm{layer_id}', torch.nn.LayerNorm(400))
             self.__setattr__(f'fc{layer_id}', torch.nn.Linear(400, 400))
         self.fcy = torch.nn.Linear(400, u_size)
+        w_init = (torch.rand(self.fcy.weight.size()) * 6 - 3) * 1e-3
+        self.fcy.weight.data.copy_(w_init)
+        self.fcy.bias.data *= 0
 
-    def forward(self, x, z):
-        xz = torch.cat([x, z], dim=1)
-        y = F.relu(self.fc1(xz))
+    def forward(self, x, z=None):
+        x = self.input_norm_x(x)
+        if z is None:
+            xz = x
+        else:
+            xz = torch.cat([x, z], dim=1)
+        if self.use_layer_norm:
+            y = F.relu(self.layer_norm_1(self.fc1(xz)))
+        else:
+            y = F.relu(self.fc1(xz))
         for layer_id in range(2, self.n_layers):
             fc = self.__getattr__(f'fc{layer_id}')
-            y = F.relu(fc(y)) + y
-        y = self.u_max * F.tanh(self.fcy(y))
-        return y
+            if self.use_layer_norm:
+                layer_norm = self.__getattr__(f'layer_norm{layer_id}')
+                y = F.relu(layer_norm(fc(y))) + y
+            else:
+                y = F.relu(fc(y)) + y
+
+        return F.tanh(self.fcy(y))
 
 
 class LatentMapping(torch.nn.Module):
@@ -330,9 +369,6 @@ class PopTart(torch.nn.Module):
 
 
 if __name__ == '__main__':
-    poptart = PopTart(alpha=0.99)
-    for _ in range(1000):
-        x = torch.randn(10, 1) * 5 + 10
-        y = x
-        loss = poptart.mse_loss(x, y)
-        print(poptart.m1)
+    policy = Policy(4, 3, 2, use_layer_norm=True)
+    u = policy(torch.randn(10, 4), torch.randn(10, 2))
+    print(u)
